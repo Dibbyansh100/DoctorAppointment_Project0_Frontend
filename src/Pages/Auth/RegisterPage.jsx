@@ -1,50 +1,74 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Button, Input } from '../../Components/Common';
 import { Mail, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
 
+const INITIAL_FORM = {
+  email: '',
+  password: '',
+  confirmPassword: '',
+};
+
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [formData, setFormData] = useState(INITIAL_FORM);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+
+  // Auto-redirect timer safety cleanup
+  useEffect(() => {
+    let timerId = null;
+    if (successMessage) {
+      timerId = setTimeout(() => {
+        navigate('/login');
+      }, 1500);
+    }
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
+  }, [successMessage, navigate]);
+
+  const handleInputChange = useCallback((e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFieldErrors((prev) => {
+      if (prev[name]) {
+        const updated = { ...prev };
+        delete updated[name];
+        return updated;
+      }
+      return prev;
+    });
+  }, []);
 
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
     setFieldErrors({});
 
-    if (!email) {
-      setFieldErrors((prev) => ({ ...prev, email: 'Email is required' }));
-      return;
-    }
-    if (!password) {
-      setFieldErrors((prev) => ({ ...prev, password: 'Password is required' }));
-      return;
-    }
-    if (password.length < 8) {
-      setFieldErrors((prev) => ({ ...prev, password: 'Password must be at least 8 characters long' }));
-      return;
-    }
-    if (password !== confirmPassword) {
-      setFieldErrors((prev) => ({ ...prev, confirmPassword: 'Passwords do not match' }));
+    const errors = {};
+    if (!formData.email.trim()) errors.email = 'Email is required';
+    if (!formData.password) errors.password = 'Password is required';
+    else if (formData.password.length < 8) errors.password = 'Password must be at least 8 characters long';
+    if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Passwords do not match';
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
 
     setIsLoading(true);
     try {
-      await register({ email, password });
+      await register({
+        email: formData.email.trim(),
+        password: formData.password,
+      });
       setSuccessMessage('Account registered successfully! Redirecting to login...');
-      setTimeout(() => {
-        navigate('/login');
-      }, 1500);
     } catch (err) {
       setErrorMessage(err.message || 'Registration failed.');
       if (err.fieldErrors) {
@@ -65,14 +89,14 @@ export function RegisterPage() {
       </div>
 
       {successMessage && (
-        <div className="mb-5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-2">
+        <div className="mb-5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-2 animate-fade-in">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{successMessage}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="mb-5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5">
+        <div className="mb-5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5 animate-fade-in">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{errorMessage}</span>
         </div>
@@ -85,8 +109,8 @@ export function RegisterPage() {
           name="email"
           type="email"
           placeholder="patient@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          value={formData.email}
+          onChange={handleInputChange}
           error={fieldErrors.email}
           icon={Mail}
           required
@@ -98,8 +122,8 @@ export function RegisterPage() {
           name="password"
           type="password"
           placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          value={formData.password}
+          onChange={handleInputChange}
           error={fieldErrors.password}
           icon={Lock}
           required
@@ -111,8 +135,8 @@ export function RegisterPage() {
           name="confirmPassword"
           type="password"
           placeholder="••••••••"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
+          value={formData.confirmPassword}
+          onChange={handleInputChange}
           error={fieldErrors.confirmPassword}
           icon={Lock}
           required
@@ -121,20 +145,18 @@ export function RegisterPage() {
         <Button
           type="submit"
           variant="primary"
+          className="w-full"
           isLoading={isLoading}
-          className="w-full mt-2"
         >
           Create Account
         </Button>
       </form>
 
-      <div className="mt-6 text-center">
-        <p className="text-xs text-slate-500">
-          Already have an account?{' '}
-          <Link to="/login" className="font-semibold text-indigo-600 hover:text-indigo-500">
-            Sign in
-          </Link>
-        </p>
+      <div className="mt-6 text-center text-xs text-slate-500">
+        Already have an account?{' '}
+        <Link to="/login" className="font-semibold text-indigo-600 hover:text-indigo-700">
+          Sign in
+        </Link>
       </div>
     </div>
   );

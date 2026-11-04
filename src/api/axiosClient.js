@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL, STORAGE_KEYS } from '../utils/constants';
 import { parseApiError } from '../utils/errorHandler';
+import { clearAuthStorage } from '../context/AuthContext';
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
@@ -35,8 +36,7 @@ axiosClient.interceptors.response.use(
 
     // If token has expired or is invalid (401), trigger session expiry event
     if (error.response?.status === 401) {
-      localStorage.removeItem(STORAGE_KEYS.TOKEN);
-      localStorage.removeItem(STORAGE_KEYS.USER);
+      clearAuthStorage();
       window.dispatchEvent(new Event('auth:unauthorized'));
     }
 

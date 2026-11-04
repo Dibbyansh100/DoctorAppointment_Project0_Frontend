@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import doctorApi from '../../api/doctorApi';
+import { useDoctorProfile } from '../../hooks/useDoctorProfile';
 import appointmentApi from '../../api/appointmentApi';
 import { StatCard, Badge, Button } from '../../Components/Common';
 import { formatTime, formatDateTime } from '../../utils/dateFormatter';
@@ -10,34 +10,9 @@ import { Stethoscope, Calendar, Clock, CheckCircle2, XCircle, ArrowRight, Dollar
 
 export function DoctorDashboard() {
   const { user } = useAuth();
-  const [doctorProfile, setDoctorProfile] = useState(null);
+  const { doctorId, doctorProfile, isLoadingDoctor } = useDoctorProfile();
   const [appointments, setAppointments] = useState([]);
-  const [doctorId, setDoctorId] = useState(() => localStorage.getItem('doctor_sys_doctor_id') || '');
   const [isLoading, setIsLoading] = useState(true);
-
-  // Load Doctor Profile and ID
-  useEffect(() => {
-    async function loadDoctorInfo() {
-      try {
-        const doctors = await doctorApi.getDoctors();
-        const matched = Array.isArray(doctors)
-          ? doctors.find((d) => d.email.toLowerCase() === user?.email.toLowerCase())
-          : null;
-        if (matched) {
-          setDoctorProfile(matched);
-          setDoctorId(matched.id);
-          localStorage.setItem('doctor_sys_doctor_id', matched.id);
-        } else if (user?.id) {
-          setDoctorId(user.id);
-        }
-      } catch (err) {
-        if (user?.id) setDoctorId(user.id);
-      }
-    }
-    if (user?.email) {
-      loadDoctorInfo();
-    }
-  }, [user]);
 
   // Load Doctor Appointments
   useEffect(() => {

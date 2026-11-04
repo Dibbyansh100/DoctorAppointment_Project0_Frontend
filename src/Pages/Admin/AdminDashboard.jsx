@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import doctorApi from '../../api/doctorApi';
@@ -17,6 +17,7 @@ export function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
     async function loadAdminData() {
       setIsLoading(true);
       try {
@@ -26,20 +27,36 @@ export function AdminDashboard() {
           appointmentApi.getAllAppointments(),
         ]);
 
-        if (docsRes.status === 'fulfilled') setDoctors(docsRes.value);
-        if (patsRes.status === 'fulfilled') setPatients(patsRes.value);
-        if (appsRes.status === 'fulfilled') setAppointments(appsRes.value);
+        if (!isMounted) return;
+
+        if (docsRes.status === 'fulfilled') {
+          setDoctors(Array.isArray(docsRes.value) ? docsRes.value : []);
+        }
+        if (patsRes.status === 'fulfilled') {
+          setPatients(Array.isArray(patsRes.value) ? patsRes.value : []);
+        }
+        if (appsRes.status === 'fulfilled') {
+          setAppointments(Array.isArray(appsRes.value) ? appsRes.value : []);
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     }
     loadAdminData();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const activeDoctors = doctors.filter((d) => d.active).length;
-  const activePatients = patients.filter((p) => p.active).length;
-  const scheduledApps = appointments.filter((a) => a.status === APPOINTMENT_STATUS.SCHEDULED).length;
-  const completedApps = appointments.filter((a) => a.status === APPOINTMENT_STATUS.COMPLETED).length;
+  // Memoize counts to prevent 4 filter passes on every render
+  const stats = useMemo(() => {
+    return {
+      activeDoctors: doctors.filter((d) => d.active).length,
+      activePatients: patients.filter((p) => p.active).length,
+      scheduledApps: appointments.filter((a) => a.status === APPOINTMENT_STATUS.SCHEDULED).length,
+      completedApps: appointments.filter((a) => a.status === APPOINTMENT_STATUS.COMPLETED).length,
+    };
+  }, [doctors, patients, appointments]);
 
   return (
     <div className="space-y-8">
@@ -77,7 +94,7 @@ export function AdminDashboard() {
         <StatCard
           title="Clinical Doctors"
           value={doctors.length}
-          subtitle={`${activeDoctors} Active in Practice`}
+          subtitle={`${stats.activeDoctors} Active in Practice`}
           icon={Stethoscope}
           color="indigo"
           loading={isLoading}
@@ -86,7 +103,7 @@ export function AdminDashboard() {
         <StatCard
           title="Registered Patients"
           value={patients.length}
-          subtitle={`${activePatients} Active Records`}
+          subtitle={`${stats.activePatients} Active Records`}
           icon={Users}
           color="blue"
           loading={isLoading}
@@ -94,7 +111,7 @@ export function AdminDashboard() {
 
         <StatCard
           title="Scheduled Visits"
-          value={scheduledApps}
+          value={stats.scheduledApps}
           subtitle="Awaiting Consultation"
           icon={Clock}
           color="amber"
@@ -103,7 +120,7 @@ export function AdminDashboard() {
 
         <StatCard
           title="Completed Visits"
-          value={completedApps}
+          value={stats.completedApps}
           subtitle="Fulfilled Consultations"
           icon={CheckCircle2}
           color="emerald"
@@ -190,7 +207,7 @@ export function AdminDashboard() {
               <div key={app.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold">
-                    {app.patientName.charAt(0)}
+                    {app.patientName?.charAt(0) || 'P'}
                   </div>
                   <div>
                     <p className="font-bold text-slate-800">

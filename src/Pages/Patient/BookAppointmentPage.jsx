@@ -1,28 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import doctorApi from '../../api/doctorApi';
 import appointmentApi from '../../api/appointmentApi';
-import { Button, Input, Select } from '../../Components/Common';
+import { Button, Input } from '../../Components/Common';
 import { getMinDateTimeString, formatDateTime } from '../../utils/dateFormatter';
-import { Calendar, Clock, Stethoscope, AlertCircle, CheckCircle2, DollarSign, UserCheck, ArrowRight } from 'lucide-react';
+import { STORAGE_KEYS } from '../../utils/constants';
+import { Stethoscope, AlertCircle, CheckCircle2, UserCheck, ArrowRight } from 'lucide-react';
+
+const INITIAL_FORM_STATE = {
+  doctorId: '',
+  appointmentDateTime: '',
+  reason: '',
+};
 
 export function BookAppointmentPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedDoctorId = searchParams.get('doctorId') || '';
 
   const [doctors, setDoctors] = useState([]);
-  const [selectedDoctorId, setSelectedDoctorId] = useState(preselectedDoctorId);
-  const [appointmentDateTime, setAppointmentDateTime] = useState('');
-  const [reason, setReason] = useState('');
-  
-  // Patient ID resolver — ONLY use the patients-table UUID stored in localStorage.
-  // user.id is from the Users table and will NOT match the Patients table.
-  const [patientId, setPatientId] = useState(() => {
-    return localStorage.getItem('doctor_sys_patient_id') || '';
+  const [formData, setFormData] = useState({
+    ...INITIAL_FORM_STATE,
+    doctorId: preselectedDoctorId,
   });
+
+  // Patient ID resolver — uses STORAGE_KEYS.PATIENT_ID constant
+  const [patientId, setPatientId] = useState(() => localStorage.getItem(STORAGE_KEYS.PATIENT_ID) || '');
   const [showPatientIdConfig, setShowPatientIdConfig] = useState(!patientId);
 
   const [isLoadingDoctors, setIsLoadingDoctors] = useState(true);
@@ -33,71 +37,92 @@ export function BookAppointmentPage() {
 
   // Fetch active doctors for selection
   useEffect(() => {
+    let isMounted = true;
     async function loadDoctors() {
       setIsLoadingDoctors(true);
       try {
         const data = await doctorApi.getDoctors();
-        console.log('[BookAppointment] Doctors API response:', data);
-        // Only show active doctors — inactive ones cannot accept appointments
+        if (!isMounted) return;
+
+        // Only active doctors can accept appointments
         const activeDocs = Array.isArray(data) ? data.filter((d) => d.active) : [];
         setDoctors(activeDocs);
+
         if (activeDocs.length === 0) {
           setErrorMessage(
-            'No doctors are currently available. An Admin must first create doctor records via the Admin panel (Manage Doctors → Add Doctor).'
+            'No doctors are currently available. An Admin must first create doctor records via Admin → Manage Doctors.'
           );
         }
+
         if (preselectedDoctorId && activeDocs.some((d) => d.id === preselectedDoctorId)) {
-          setSelectedDoctorId(preselectedDoctorId);
+          setFormData((prev) => ({ ...prev, doctorId: preselectedDoctorId }));
         }
       } catch (err) {
-        console.error('[BookAppointment] Failed to load doctors:', err);
-        setErrorMessage(err.message || 'Failed to load doctors list. Is the backend running?');
+        if (!isMounted) return;
+        setErrorMessage(err.message || 'Failed to load doctors list. Please verify the backend is running.');
       } finally {
-        setIsLoadingDoctors(false);
+        if (isMounted) setIsLoadingDoctors(false);
       }
     }
+
     loadDoctors();
+    return () => {
+      isMounted = false;
+    };
   }, [preselectedDoctorId]);
 
-  const selectedDoctor = doctors.find((d) => d.id === selectedDoctorId);
+  // Memoize selected doctor lookup to avoid array searches on every keystroke
+  const selectedDoctor = useMemo(
+    () => doctors.find((d) => d.id === formData.doctorId) || null,
+    [doctors, formData.doctorId]
+  );
+
+  // Unified change handler that automatically clears field-level validation errors
+  const handleInputChange = useCallback((e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFieldErrors((prev) => {
+      if (prev[name]) {
+        const updated = { ...prev };
+        delete updated[name];
+        return updated;
+      }
+      return prev;
+    });
+  }, []);
 
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
     setFieldErrors({});
 
-    if (!selectedDoctorId) {
-      setFieldErrors((prev) => ({ ...prev, doctorId: 'Please select a doctor' }));
+    const errors = {};
+    if (!formData.doctorId) errors.doctorId = 'Please select a doctor';
+    if (!formData.appointmentDateTime) errors.appointmentDateTime = 'Please choose date and time';
+    if (!formData.reason.trim()) errors.reason = 'Reason for appointment is required';
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
-    if (!appointmentDateTime) {
-      setFieldErrors((prev) => ({ ...prev, appointmentDateTime: 'Please choose date and time' }));
-      return;
-    }
-    if (!reason.trim()) {
-      setFieldErrors((prev) => ({ ...prev, reason: 'Reason for appointment is required' }));
-      return;
-    }
+
     if (!patientId.trim()) {
-      setErrorMessage('Patient ID is required. Please verify your Patient profile.');
+      setErrorMessage('Patient ID is required. Please save your Patient UUID below.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // Payload format matches backend AppointmentRequest record:
-      // { patientId: UUID, doctorId: UUID, appointmentDateTime: LocalDateTime, reason: string }
       const payload = {
         patientId: patientId.trim(),
-        doctorId: selectedDoctorId,
-        appointmentDateTime: appointmentDateTime, // standard YYYY-MM-DDTHH:mm
-        reason: reason.trim(),
+        doctorId: formData.doctorId,
+        appointmentDateTime: formData.appointmentDateTime,
+        reason: formData.reason.trim(),
       };
 
       const response = await appointmentApi.bookAppointment(payload);
       setBookedAppointment(response);
-      // Persist verified patientId in storage for future bookings
-      localStorage.setItem('doctor_sys_patient_id', patientId.trim());
+      localStorage.setItem(STORAGE_KEYS.PATIENT_ID, patientId.trim());
     } catch (err) {
       setErrorMessage(err.message || 'Could not complete booking.');
       if (err.fieldErrors) {
@@ -107,6 +132,11 @@ export function BookAppointmentPage() {
       setIsSubmitting(false);
     }
   };
+
+  const handleBookAnother = useCallback(() => {
+    setBookedAppointment(null);
+    setFormData(INITIAL_FORM_STATE);
+  }, []);
 
   if (bookedAppointment) {
     return (
@@ -144,15 +174,7 @@ export function BookAppointmentPage() {
               View My Appointments
             </Button>
           </Link>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setBookedAppointment(null);
-              setSelectedDoctorId('');
-              setAppointmentDateTime('');
-              setReason('');
-            }}
-          >
+          <Button variant="outline" onClick={handleBookAnother}>
             Book Another Appointment
           </Button>
         </div>
@@ -186,16 +208,18 @@ export function BookAppointmentPage() {
         <form onSubmit={handleBookingSubmit} className="space-y-6">
           {/* Doctor Selection */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            <label htmlFor="doctorId" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
               Select Doctor <span className="text-rose-500">*</span>
             </label>
 
             {isLoadingDoctors ? (
-              <div className="h-10 bg-slate-100 rounded-lg animate-pulse"></div>
+              <div className="h-10 bg-slate-100 rounded-lg animate-pulse" />
             ) : (
               <select
-                value={selectedDoctorId}
-                onChange={(e) => setSelectedDoctorId(e.target.value)}
+                id="doctorId"
+                name="doctorId"
+                value={formData.doctorId}
+                onChange={handleInputChange}
                 className={`w-full p-3 rounded-xl border text-sm bg-white outline-none transition-colors ${
                   fieldErrors.doctorId
                     ? 'border-rose-400 focus:border-rose-500'
@@ -217,7 +241,7 @@ export function BookAppointmentPage() {
 
             {/* Doctor preview card */}
             {selectedDoctor && (
-              <div className="mt-3 p-3.5 rounded-xl bg-indigo-50/50 border border-indigo-100 flex items-center justify-between text-xs">
+              <div className="mt-3 p-3.5 rounded-xl bg-indigo-50/50 border border-indigo-100 flex items-center justify-between text-xs animate-fade-in">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">
                     <Stethoscope className="w-4 h-4" />
@@ -239,23 +263,23 @@ export function BookAppointmentPage() {
 
           {/* Appointment Date & Time */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            <label htmlFor="appointmentDateTime" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
               Date & Time <span className="text-rose-500">*</span>
             </label>
-            <div className="relative">
-              <input
-                type="datetime-local"
-                min={getMinDateTimeString()}
-                value={appointmentDateTime}
-                onChange={(e) => setAppointmentDateTime(e.target.value)}
-                className={`w-full p-3 rounded-xl border text-sm outline-none transition-colors ${
-                  fieldErrors.appointmentDateTime
-                    ? 'border-rose-400 bg-rose-50/20 focus:border-rose-500'
-                    : 'border-slate-300 focus:border-indigo-500 bg-white'
-                }`}
-              />
-            </div>
-            <p className="text-[11px] text-slate-600 mt-1">
+            <input
+              id="appointmentDateTime"
+              name="appointmentDateTime"
+              type="datetime-local"
+              min={getMinDateTimeString()}
+              value={formData.appointmentDateTime}
+              onChange={handleInputChange}
+              className={`w-full p-3 rounded-xl border text-sm outline-none transition-colors ${
+                fieldErrors.appointmentDateTime
+                  ? 'border-rose-400 bg-rose-50/20 focus:border-rose-500'
+                  : 'border-slate-300 focus:border-indigo-500 bg-white'
+              }`}
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
               Backend validates that appointments cannot be booked in the past or collide with an existing booking.
             </p>
             {fieldErrors.appointmentDateTime && (
@@ -265,24 +289,26 @@ export function BookAppointmentPage() {
 
           {/* Reason for Visit */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            <label htmlFor="reason" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
               Reason for Visit (max 500 characters) <span className="text-rose-500">*</span>
             </label>
             <textarea
+              id="reason"
+              name="reason"
               rows={3}
               maxLength={500}
               placeholder="Describe your health concern, symptoms, or purpose of consultation..."
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              value={formData.reason}
+              onChange={handleInputChange}
               className={`w-full p-3 rounded-xl border text-sm outline-none transition-colors ${
                 fieldErrors.reason
                   ? 'border-rose-400 bg-rose-50/20 focus:border-rose-500'
                   : 'border-slate-300 focus:border-indigo-500 bg-white'
               }`}
             />
-            <div className="flex justify-between items-center text-[11px] text-slate-600 mt-1">
+            <div className="flex justify-between items-center text-[11px] text-slate-500 mt-1">
               <span>Required by clinic records</span>
-              <span>{reason.length}/500</span>
+              <span>{formData.reason.length}/500</span>
             </div>
             {fieldErrors.reason && (
               <p className="text-xs text-rose-600 mt-1 font-medium">{fieldErrors.reason}</p>
@@ -292,7 +318,6 @@ export function BookAppointmentPage() {
           {/* Patient UUID Profile Linkage */}
           <div className="pt-4 border-t border-slate-100">
             {!patientId ? (
-              /* Prominent setup banner when patient ID is missing */
               <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
                 <div className="flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -307,11 +332,12 @@ export function BookAppointmentPage() {
                       <li>Copy the <strong>Patient UUID</strong> and share it with you</li>
                     </ol>
                     <div className="mt-3">
-                      <label className="block text-xs font-semibold text-amber-800 mb-1.5">
+                      <label htmlFor="patientUuidInput" className="block text-xs font-semibold text-amber-800 mb-1.5">
                         Paste your Patient UUID below:
                       </label>
                       <div className="flex gap-2">
                         <input
+                          id="patientUuidInput"
                           type="text"
                           value={patientId}
                           onChange={(e) => setPatientId(e.target.value)}
@@ -323,7 +349,7 @@ export function BookAppointmentPage() {
                           variant="primary"
                           onClick={() => {
                             if (patientId.trim()) {
-                              localStorage.setItem('doctor_sys_patient_id', patientId.trim());
+                              localStorage.setItem(STORAGE_KEYS.PATIENT_ID, patientId.trim());
                               setShowPatientIdConfig(false);
                             }
                           }}
@@ -336,7 +362,6 @@ export function BookAppointmentPage() {
                 </div>
               </div>
             ) : (
-              /* Compact display when patient ID is already configured */
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
                   <UserCheck className="w-4 h-4 text-emerald-500" />
@@ -355,9 +380,12 @@ export function BookAppointmentPage() {
 
             {patientId && showPatientIdConfig && (
               <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Patient Entity UUID</label>
+                <label htmlFor="editPatientId" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Patient Entity UUID
+                </label>
                 <div className="flex gap-2">
                   <input
+                    id="editPatientId"
                     type="text"
                     value={patientId}
                     onChange={(e) => setPatientId(e.target.value)}
@@ -369,7 +397,7 @@ export function BookAppointmentPage() {
                     variant="primary"
                     onClick={() => {
                       if (patientId.trim()) {
-                        localStorage.setItem('doctor_sys_patient_id', patientId.trim());
+                        localStorage.setItem(STORAGE_KEYS.PATIENT_ID, patientId.trim());
                         setShowPatientIdConfig(false);
                       }
                     }}

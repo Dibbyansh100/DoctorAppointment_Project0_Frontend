@@ -1,7 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import doctorApi from '../../api/doctorApi';
 import { Button, Input, Modal, Badge } from '../../Components/Common';
 import { Stethoscope, Plus, Search, Edit2, Power, AlertCircle, RefreshCw, DollarSign, Phone, Mail } from 'lucide-react';
+
+const INITIAL_FORM = {
+  name: '',
+  email: '',
+  phoneNumber: '',
+  specialization: '',
+  consultationFee: '',
+};
 
 export function ManageDoctorsPage() {
   const [doctors, setDoctors] = useState([]);
@@ -15,24 +23,19 @@ export function ManageDoctorsPage() {
   // Modal State (for both Create and Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phoneNumber: '',
-    specialization: '',
-    consultationFee: '',
-  });
+  const [formData, setFormData] = useState(INITIAL_FORM);
   const [fieldErrors, setFieldErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [specializations, setSpecializations] = useState([]);
 
-  const fetchDoctors = async () => {
+  const fetchDoctors = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage('');
     try {
       const data = await doctorApi.getDoctors(specializationFilter);
       const list = Array.isArray(data) ? data : [];
       setDoctors(list);
+
       // Build dynamic specialization list from full (unfiltered) data
       if (!specializationFilter) {
         const uniqueSpecs = [...new Set(list.map((d) => d.specialization).filter(Boolean))].sort();
@@ -43,37 +46,44 @@ export function ManageDoctorsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [specializationFilter]);
 
   useEffect(() => {
     fetchDoctors();
-  }, [specializationFilter]);
+  }, [fetchDoctors]);
 
-  const handleOpenCreateModal = () => {
+  const handleOpenCreateModal = useCallback(() => {
     setEditingDoctor(null);
-    setFormData({
-      name: '',
-      email: '',
-      phoneNumber: '',
-      specialization: '',
-      consultationFee: '',
-    });
+    setFormData(INITIAL_FORM);
     setFieldErrors({});
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const handleOpenEditModal = (doc) => {
+  const handleOpenEditModal = useCallback((doc) => {
     setEditingDoctor(doc);
     setFormData({
-      name: doc.name,
-      email: doc.email,
-      phoneNumber: doc.phoneNumber,
-      specialization: doc.specialization,
-      consultationFee: String(doc.consultationFee),
+      name: doc.name || '',
+      email: doc.email || '',
+      phoneNumber: doc.phoneNumber || '',
+      specialization: doc.specialization || '',
+      consultationFee: String(doc.consultationFee ?? ''),
     });
     setFieldErrors({});
     setIsModalOpen(true);
-  };
+  }, []);
+
+  const handleInputChange = useCallback((e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFieldErrors((prev) => {
+      if (prev[name]) {
+        const updated = { ...prev };
+        delete updated[name];
+        return updated;
+      }
+      return prev;
+    });
+  }, []);
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
@@ -118,8 +128,7 @@ export function ManageDoctorsPage() {
     }
   };
 
-  // Toggle active/inactive state
-  const handleToggleActive = async (doc) => {
+  const handleToggleActive = useCallback(async (doc) => {
     const action = doc.active ? 'deactivate' : 'activate';
     if (!window.confirm(`Are you sure you want to ${action} doctor "${doc.name}"?`)) {
       return;
@@ -131,10 +140,10 @@ export function ManageDoctorsPage() {
     try {
       if (doc.active) {
         await doctorApi.deactivateDoctor(doc.id);
-        setSuccessMessage(`Doctor "${doc.name}" deactivated.`);
+        setSuccessMessage(`Doctor "${doc.name}" has been deactivated.`);
       } else {
         await doctorApi.activateDoctor(doc.id);
-        setSuccessMessage(`Doctor "${doc.name}" activated.`);
+        setSuccessMessage(`Doctor "${doc.name}" has been activated.`);
       }
       fetchDoctors();
     } catch (err) {
@@ -142,17 +151,19 @@ export function ManageDoctorsPage() {
     } finally {
       setActionLoadingId(null);
     }
-  };
+  }, [fetchDoctors]);
 
-  const filteredDoctors = doctors.filter((doc) => {
-    if (!searchQuery.trim()) return true;
+  // Memoize search filtering to prevent recalculation when typing in modal or toggling loading
+  const filteredDoctors = useMemo(() => {
+    if (!searchQuery.trim()) return doctors;
     const query = searchQuery.toLowerCase();
-    return (
-      doc.name.toLowerCase().includes(query) ||
-      doc.email.toLowerCase().includes(query) ||
-      doc.specialization.toLowerCase().includes(query)
+    return doctors.filter(
+      (doc) =>
+        doc.name?.toLowerCase().includes(query) ||
+        doc.email?.toLowerCase().includes(query) ||
+        doc.specialization?.toLowerCase().includes(query)
     );
-  });
+  }, [doctors, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -161,7 +172,7 @@ export function ManageDoctorsPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Manage Doctors</h1>
           <p className="text-xs text-slate-500 mt-1">
-            Register new physicians, update profiles, and manage active clinical practice status
+            Register new physicians, update medical specialties, manage consultation fees, and toggle status
           </p>
         </div>
 
@@ -175,39 +186,38 @@ export function ManageDoctorsPage() {
           >
             Refresh
           </Button>
-
           <Button
             variant="primary"
             size="sm"
             onClick={handleOpenCreateModal}
             icon={Plus}
           >
-            Add New Doctor
+            Add Doctor
           </Button>
         </div>
       </div>
 
       {/* Notifications */}
       {successMessage && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center justify-between">
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center justify-between animate-fade-in">
           <span>{successMessage}</span>
-          <button onClick={() => setSuccessMessage('')} className="text-emerald-800 font-bold">×</button>
+          <button onClick={() => setSuccessMessage('')} className="text-emerald-800 font-bold ml-2">×</button>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5">
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5 animate-fade-in">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="font-semibold">Error</p>
+            <p className="font-semibold">Notice</p>
             <p className="mt-0.5">{errorMessage}</p>
           </div>
-          <button onClick={() => setErrorMessage('')} className="text-rose-800 font-bold">×</button>
+          <button onClick={() => setErrorMessage('')} className="text-rose-800 font-bold ml-2">×</button>
         </div>
       )}
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row gap-3">
+      {/* Filters Bar */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
@@ -215,7 +225,7 @@ export function ManageDoctorsPage() {
             placeholder="Search by name, email, or specialization..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-indigo-500 focus:ring-indigo-500"
+            className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-indigo-500"
           />
         </div>
 
@@ -236,15 +246,15 @@ export function ManageDoctorsPage() {
       {/* Doctor Table */}
       {isLoading ? (
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 animate-pulse space-y-4">
-          <div className="h-6 bg-slate-200 rounded w-1/4"></div>
-          <div className="h-10 bg-slate-100 rounded"></div>
-          <div className="h-10 bg-slate-100 rounded"></div>
+          <div className="h-6 bg-slate-200 rounded w-1/4" />
+          <div className="h-10 bg-slate-100 rounded" />
+          <div className="h-10 bg-slate-100 rounded" />
         </div>
       ) : filteredDoctors.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center">
           <Stethoscope className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="text-base font-semibold text-slate-700">No doctors found</h3>
-          <p className="text-xs text-slate-500 mt-1">Click "Add New Doctor" to register clinical staff.</p>
+          <p className="text-xs text-slate-500 mt-1">Try adjusting your search criteria or register a new doctor.</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
@@ -252,39 +262,44 @@ export function ManageDoctorsPage() {
             <table className="w-full text-left text-xs text-slate-600">
               <thead className="bg-slate-50 border-b border-slate-200/80 text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
                 <tr>
-                  <th className="px-5 py-3.5">Doctor Details</th>
+                  <th className="px-5 py-3.5">Doctor</th>
                   <th className="px-5 py-3.5">Specialization</th>
                   <th className="px-5 py-3.5">Consultation Fee</th>
+                  <th className="px-5 py-3.5">Phone Number</th>
                   <th className="px-5 py-3.5">Status</th>
                   <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredDoctors.map((doc) => {
-                  const isProcessing = actionLoadingId === doc.id;
+                  const isActing = actionLoadingId === doc.id;
 
                   return (
                     <tr key={doc.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-bold">
+                      <td className="px-5 py-4 font-semibold text-slate-800">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
                             {doc.name.charAt(0)}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-800 text-sm">{doc.name}</p>
-                            <p className="text-slate-500 text-[11px]">{doc.email} • {doc.phoneNumber}</p>
+                            <p>{doc.name}</p>
+                            <span className="text-[10px] text-slate-400 font-normal">{doc.email}</span>
                           </div>
                         </div>
                       </td>
 
-                      <td className="px-5 py-4">
-                        <span className="inline-block px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold text-[11px]">
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-semibold text-[11px]">
                           {doc.specialization}
                         </span>
                       </td>
 
-                      <td className="px-5 py-4 font-bold text-slate-800">
+                      <td className="px-5 py-4 whitespace-nowrap font-semibold text-slate-800">
                         ${Number(doc.consultationFee).toFixed(2)}
+                      </td>
+
+                      <td className="px-5 py-4 whitespace-nowrap text-slate-600">
+                        {doc.phoneNumber}
                       </td>
 
                       <td className="px-5 py-4 whitespace-nowrap">
@@ -295,8 +310,8 @@ export function ManageDoctorsPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleOpenEditModal(doc)}
                           icon={Edit2}
+                          onClick={() => handleOpenEditModal(doc)}
                         >
                           Edit
                         </Button>
@@ -304,9 +319,9 @@ export function ManageDoctorsPage() {
                         <Button
                           variant={doc.active ? 'danger' : 'success'}
                           size="sm"
-                          onClick={() => handleToggleActive(doc)}
-                          isLoading={isProcessing}
                           icon={Power}
+                          isLoading={isActing}
+                          onClick={() => handleToggleActive(doc)}
                         >
                           {doc.active ? 'Deactivate' : 'Activate'}
                         </Button>
@@ -320,12 +335,11 @@ export function ManageDoctorsPage() {
         </div>
       )}
 
-      {/* Create / Edit Modal */}
+      {/* Add / Edit Doctor Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingDoctor ? 'Edit Doctor Details' : 'Register New Doctor'}
-        maxWidth="lg"
       >
         <form onSubmit={handleFormSubmit} className="space-y-4">
           <Input
@@ -333,7 +347,7 @@ export function ManageDoctorsPage() {
             name="name"
             placeholder="Dr. John Smith"
             value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            onChange={handleInputChange}
             error={fieldErrors.name}
             required
           />
@@ -345,7 +359,7 @@ export function ManageDoctorsPage() {
               type="email"
               placeholder="doctor@example.com"
               value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              onChange={handleInputChange}
               error={fieldErrors.email}
               required
             />
@@ -355,7 +369,7 @@ export function ManageDoctorsPage() {
               name="phoneNumber"
               placeholder="+1-555-0123"
               value={formData.phoneNumber}
-              onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+              onChange={handleInputChange}
               error={fieldErrors.phoneNumber}
               required
             />
@@ -367,7 +381,7 @@ export function ManageDoctorsPage() {
               name="specialization"
               placeholder="e.g. Cardiology, Neurology"
               value={formData.specialization}
-              onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
+              onChange={handleInputChange}
               error={fieldErrors.specialization}
               required
             />
@@ -380,14 +394,14 @@ export function ManageDoctorsPage() {
               min="0"
               placeholder="150.00"
               value={formData.consultationFee}
-              onChange={(e) => setFormData({ ...formData, consultationFee: e.target.value })}
+              onChange={handleInputChange}
               error={fieldErrors.consultationFee}
               required
             />
           </div>
 
           {!editingDoctor && (
-            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-700">
+            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-700 animate-fade-in">
               <p className="font-semibold">Doctor Login Credentials</p>
               <p className="mt-0.5 text-slate-600">
                 A DOCTOR login account will automatically be created. The doctor can sign in with this email and default password: <code className="bg-white px-1.5 py-0.5 rounded text-indigo-700 font-bold border border-indigo-200">Doctor@123</code>
@@ -397,6 +411,7 @@ export function ManageDoctorsPage() {
 
           <div className="pt-4 flex items-center justify-end gap-2.5 border-t border-slate-100">
             <Button
+              type="button"
               variant="outline"
               onClick={() => setIsModalOpen(false)}
             >

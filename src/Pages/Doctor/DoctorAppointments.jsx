@@ -1,46 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import doctorApi from '../../api/doctorApi';
+import { useDoctorProfile } from '../../hooks/useDoctorProfile';
 import appointmentApi from '../../api/appointmentApi';
 import { Badge, Button } from '../../Components/Common';
 import { formatDateTime } from '../../utils/dateFormatter';
 import { APPOINTMENT_STATUS } from '../../utils/constants';
-import { ClipboardList, CheckCircle2, XCircle, Clock, AlertCircle, RefreshCw, User, Calendar } from 'lucide-react';
+import { ClipboardList, CheckCircle2, XCircle, Clock, AlertCircle, RefreshCw, User } from 'lucide-react';
 
 export function DoctorAppointments() {
   const { user } = useAuth();
+  const { doctorId, isLoadingDoctor } = useDoctorProfile();
   const [appointments, setAppointments] = useState([]);
-  const [doctorId, setDoctorId] = useState(() => localStorage.getItem('doctor_sys_doctor_id') || '');
   const [activeTab, setActiveTab] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Automatically resolve doctorId by matching doctor record email to logged-in user email
-  useEffect(() => {
-    async function resolveDoctor() {
-      try {
-        const doctors = await doctorApi.getDoctors();
-        const matched = Array.isArray(doctors)
-          ? doctors.find((d) => d.email.toLowerCase() === user?.email.toLowerCase())
-          : null;
-        if (matched) {
-          setDoctorId(matched.id);
-          localStorage.setItem('doctor_sys_doctor_id', matched.id);
-        } else if (user?.id) {
-          setDoctorId(user.id);
-        }
-      } catch (err) {
-        if (user?.id) setDoctorId(user.id);
-      }
-    }
-    if (user?.email) {
-      resolveDoctor();
-    }
-  }, [user]);
-
-  const fetchAppointments = async () => {
+  const fetchAppointments = useCallback(async () => {
     if (!doctorId) {
       setIsLoading(false);
       return;
@@ -49,32 +26,29 @@ export function DoctorAppointments() {
     setErrorMessage('');
     try {
       const data = await appointmentApi.getAppointmentsByDoctor(doctorId);
-      setAppointments(data);
+      setAppointments(Array.isArray(data) ? data : []);
     } catch (err) {
       setErrorMessage(err.message || 'Failed to load doctor appointments.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [doctorId]);
 
   useEffect(() => {
     if (doctorId) {
       fetchAppointments();
     }
-  }, [doctorId]);
+  }, [doctorId, fetchAppointments]);
 
   // Handle Mark Complete: PATCH /api/v1/appointments/{id}/complete
-  const handleComplete = async (app) => {
-    // Backend validation: Cannot complete before scheduled date and time
+  const handleComplete = useCallback(async (app) => {
+    // Backend validation guard: Cannot complete before scheduled date and time
     const appointmentTime = new Date(app.appointmentDateTime);
     if (appointmentTime > new Date()) {
-      if (
-        !window.confirm(
-          'Notice: This appointment is scheduled for a future time. Backend business rules disallow completing visits before their scheduled time. Do you still wish to attempt?'
-        )
-      ) {
-        return;
-      }
+      const proceed = window.confirm(
+        'Notice: This appointment is scheduled for a future time. Backend business rules disallow completing visits before their scheduled time. Do you still wish to attempt?'
+      );
+      if (!proceed) return;
     }
 
     setActionLoadingId(app.id);
@@ -89,13 +63,14 @@ export function DoctorAppointments() {
     } finally {
       setActionLoadingId(null);
     }
-  };
+  }, [fetchAppointments]);
 
   // Handle Cancel: PATCH /api/v1/appointments/{id}/cancel
-  const handleCancel = async (app) => {
-    if (!window.confirm(`Are you sure you want to cancel the appointment with ${app.patientName}?`)) {
-      return;
-    }
+  const handleCancel = useCallback(async (app) => {
+    const confirmCancel = window.confirm(
+      `Are you sure you want to cancel the appointment with ${app.patientName}?`
+    );
+    if (!confirmCancel) return;
 
     setActionLoadingId(app.id);
     setErrorMessage('');
@@ -109,12 +84,24 @@ export function DoctorAppointments() {
     } finally {
       setActionLoadingId(null);
     }
-  };
+  }, [fetchAppointments]);
 
-  const filteredAppointments = appointments.filter((app) => {
-    if (activeTab === 'ALL') return true;
-    return app.status === activeTab;
-  });
+  // Memoize counts by status so tab iteration is O(1) during render
+  const statusCounts = useMemo(() => {
+    const counts = { ALL: appointments.length, SCHEDULED: 0, COMPLETED: 0, CANCELLED: 0 };
+    for (const app of appointments) {
+      if (counts[app.status] !== undefined) {
+        counts[app.status]++;
+      }
+    }
+    return counts;
+  }, [appointments]);
+
+  // Memoize filtered appointments list
+  const filteredAppointments = useMemo(() => {
+    if (activeTab === 'ALL') return appointments;
+    return appointments.filter((app) => app.status === activeTab);
+  }, [appointments, activeTab]);
 
   return (
     <div className="space-y-6">
@@ -132,7 +119,7 @@ export function DoctorAppointments() {
           size="sm"
           onClick={fetchAppointments}
           icon={RefreshCw}
-          disabled={isLoading}
+          disabled={isLoading || isLoadingDoctor}
         >
           Refresh Queue
         </Button>
@@ -140,20 +127,20 @@ export function DoctorAppointments() {
 
       {/* Notifications */}
       {successMessage && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center justify-between">
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center justify-between animate-fade-in">
           <span>{successMessage}</span>
-          <button onClick={() => setSuccessMessage('')} className="text-emerald-800 font-bold">×</button>
+          <button onClick={() => setSuccessMessage('')} className="text-emerald-800 font-bold ml-2">×</button>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5">
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5 animate-fade-in">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="font-semibold">Operation Alert</p>
             <p className="mt-0.5">{errorMessage}</p>
           </div>
-          <button onClick={() => setErrorMessage('')} className="text-rose-800 font-bold">×</button>
+          <button onClick={() => setErrorMessage('')} className="text-rose-800 font-bold ml-2">×</button>
         </div>
       )}
 
@@ -170,21 +157,19 @@ export function DoctorAppointments() {
             }`}
           >
             {tab === 'ALL' ? 'All Queue' : tab.charAt(0) + tab.slice(1).toLowerCase()}
-            <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] bg-black/10">
-              {tab === 'ALL'
-                ? appointments.length
-                : appointments.filter((a) => a.status === tab).length}
+            <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] bg-black/10">
+              {statusCounts[tab] || 0}
             </span>
           </button>
         ))}
       </div>
 
       {/* Appointments List / Table */}
-      {isLoading ? (
+      {isLoading || isLoadingDoctor ? (
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 animate-pulse space-y-4">
-          <div className="h-6 bg-slate-200 rounded w-1/4"></div>
-          <div className="h-10 bg-slate-100 rounded"></div>
-          <div className="h-10 bg-slate-100 rounded"></div>
+          <div className="h-6 bg-slate-200 rounded w-1/4" />
+          <div className="h-10 bg-slate-100 rounded" />
+          <div className="h-10 bg-slate-100 rounded" />
         </div>
       ) : filteredAppointments.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center">
@@ -219,7 +204,9 @@ export function DoctorAppointments() {
                           </div>
                           <div>
                             <p>{app.patientName}</p>
-                            <span className="text-[10px] text-slate-600 font-mono">ID: {app.patientId.slice(0, 8)}...</span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              ID: {app.patientId?.slice(0, 8)}...
+                            </span>
                           </div>
                         </div>
                       </td>
@@ -263,7 +250,7 @@ export function DoctorAppointments() {
                             </Button>
                           </div>
                         ) : (
-                          <span className="text-slate-600 text-[11px] italic">No actions</span>
+                          <span className="text-slate-400 text-[11px] italic">No actions</span>
                         )}
                       </td>
                     </tr>

@@ -13,6 +13,8 @@ export const APPOINTMENT_STATUS = {
 export const STORAGE_KEYS = {
   TOKEN: 'doctor_sys_token',
   USER: 'doctor_sys_user',
+  DOCTOR_ID: 'doctor_sys_doctor_id',
+  PATIENT_ID: 'doctor_sys_patient_id',
 };
 
 // When VITE_API_BASE_URL is empty, Axios makes requests relative to the current host,
