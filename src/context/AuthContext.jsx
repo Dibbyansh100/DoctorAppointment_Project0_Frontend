@@ -70,6 +70,8 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
     localStorage.removeItem(STORAGE_KEYS.USER);
+    localStorage.removeItem('doctor_sys_doctor_id');
+    localStorage.removeItem('doctor_sys_patient_id');
     setToken(null);
     setUser(null);
   }, []);

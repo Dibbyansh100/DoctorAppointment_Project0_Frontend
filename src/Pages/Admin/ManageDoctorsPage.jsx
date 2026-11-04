@@ -24,13 +24,20 @@ export function ManageDoctorsPage() {
   });
   const [fieldErrors, setFieldErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [specializations, setSpecializations] = useState([]);
 
   const fetchDoctors = async () => {
     setIsLoading(true);
     setErrorMessage('');
     try {
       const data = await doctorApi.getDoctors(specializationFilter);
-      setDoctors(data);
+      const list = Array.isArray(data) ? data : [];
+      setDoctors(list);
+      // Build dynamic specialization list from full (unfiltered) data
+      if (!specializationFilter) {
+        const uniqueSpecs = [...new Set(list.map((d) => d.specialization).filter(Boolean))].sort();
+        setSpecializations(uniqueSpecs);
+      }
     } catch (err) {
       setErrorMessage(err.message || 'Failed to load doctors.');
     } finally {
@@ -219,12 +226,9 @@ export function ManageDoctorsPage() {
             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs outline-none bg-white focus:border-indigo-500"
           >
             <option value="">All Specializations</option>
-            <option value="Cardiology">Cardiology</option>
-            <option value="Dermatology">Dermatology</option>
-            <option value="General Medicine">General Medicine</option>
-            <option value="Pediatrics">Pediatrics</option>
-            <option value="Orthopedics">Orthopedics</option>
-            <option value="Neurology">Neurology</option>
+            {specializations.map((spec) => (
+              <option key={spec} value={spec}>{spec}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -381,6 +385,15 @@ export function ManageDoctorsPage() {
               required
             />
           </div>
+
+          {!editingDoctor && (
+            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-700">
+              <p className="font-semibold">Doctor Login Credentials</p>
+              <p className="mt-0.5 text-slate-600">
+                A DOCTOR login account will automatically be created. The doctor can sign in with this email and default password: <code className="bg-white px-1.5 py-0.5 rounded text-indigo-700 font-bold border border-indigo-200">Doctor@123</code>
+              </p>
+            </div>
+          )}
 
           <div className="pt-4 flex items-center justify-end gap-2.5 border-t border-slate-100">
             <Button

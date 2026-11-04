@@ -18,11 +18,12 @@ export function BookAppointmentPage() {
   const [appointmentDateTime, setAppointmentDateTime] = useState('');
   const [reason, setReason] = useState('');
   
-  // Patient ID resolver (checks localStorage or defaults to logged-in user.id)
+  // Patient ID resolver — ONLY use the patients-table UUID stored in localStorage.
+  // user.id is from the Users table and will NOT match the Patients table.
   const [patientId, setPatientId] = useState(() => {
-    return localStorage.getItem('doctor_sys_patient_id') || user?.id || '';
+    return localStorage.getItem('doctor_sys_patient_id') || '';
   });
-  const [showPatientIdConfig, setShowPatientIdConfig] = useState(false);
+  const [showPatientIdConfig, setShowPatientIdConfig] = useState(!patientId);
 
   const [isLoadingDoctors, setIsLoadingDoctors] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,14 +37,21 @@ export function BookAppointmentPage() {
       setIsLoadingDoctors(true);
       try {
         const data = await doctorApi.getDoctors();
-        // Only active doctors can accept appointments according to backend business rules
-        const activeDocs = data.filter((d) => d.active);
+        console.log('[BookAppointment] Doctors API response:', data);
+        // Only show active doctors — inactive ones cannot accept appointments
+        const activeDocs = Array.isArray(data) ? data.filter((d) => d.active) : [];
         setDoctors(activeDocs);
+        if (activeDocs.length === 0) {
+          setErrorMessage(
+            'No doctors are currently available. An Admin must first create doctor records via the Admin panel (Manage Doctors → Add Doctor).'
+          );
+        }
         if (preselectedDoctorId && activeDocs.some((d) => d.id === preselectedDoctorId)) {
           setSelectedDoctorId(preselectedDoctorId);
         }
       } catch (err) {
-        setErrorMessage(err.message || 'Failed to load doctors list.');
+        console.error('[BookAppointment] Failed to load doctors:', err);
+        setErrorMessage(err.message || 'Failed to load doctors list. Is the backend running?');
       } finally {
         setIsLoadingDoctors(false);
       }
@@ -282,32 +290,94 @@ export function BookAppointmentPage() {
           </div>
 
           {/* Patient UUID Profile Linkage */}
-          <div className="pt-2 border-t border-slate-100">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4 text-slate-400" />
-                Booking for: <strong className="text-slate-800">{user?.email}</strong>
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowPatientIdConfig(!showPatientIdConfig)}
-                className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold cursor-pointer"
-              >
-                {showPatientIdConfig ? 'Hide Profile ID' : 'Edit Profile ID'}
-              </button>
-            </div>
+          <div className="pt-4 border-t border-slate-100">
+            {!patientId ? (
+              /* Prominent setup banner when patient ID is missing */
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-800">Patient Profile Setup Required</p>
+                    <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                      Your login account does not have a linked Patient record. Ask your Admin to:
+                    </p>
+                    <ol className="text-xs text-amber-700 mt-2 list-decimal list-inside space-y-1">
+                      <li>Go to <strong>Admin → Manage Patients → Add Patient</strong></li>
+                      <li>Create a patient with email: <strong>{user?.email}</strong></li>
+                      <li>Copy the <strong>Patient UUID</strong> and share it with you</li>
+                    </ol>
+                    <div className="mt-3">
+                      <label className="block text-xs font-semibold text-amber-800 mb-1.5">
+                        Paste your Patient UUID below:
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={patientId}
+                          onChange={(e) => setPatientId(e.target.value)}
+                          placeholder="e.g. a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                          className="flex-1 p-2.5 rounded-lg border border-amber-300 text-sm outline-none focus:border-indigo-500 bg-white font-mono text-xs"
+                        />
+                        <Button
+                          type="button"
+                          variant="primary"
+                          onClick={() => {
+                            if (patientId.trim()) {
+                              localStorage.setItem('doctor_sys_patient_id', patientId.trim());
+                              setShowPatientIdConfig(false);
+                            }
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Compact display when patient ID is already configured */
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 text-emerald-500" />
+                  Booking for: <strong className="text-slate-800">{user?.email}</strong>
+                  <span className="text-[10px] text-slate-400 font-mono ml-1">({patientId.slice(0, 8)}…)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPatientIdConfig(!showPatientIdConfig)}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold cursor-pointer"
+                >
+                  {showPatientIdConfig ? 'Hide' : 'Change ID'}
+                </button>
+              </div>
+            )}
 
-            {showPatientIdConfig && (
+            {patientId && showPatientIdConfig && (
               <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <Input
-                  label="Patient Entity UUID"
-                  id="patientId"
-                  name="patientId"
-                  value={patientId}
-                  onChange={(e) => setPatientId(e.target.value)}
-                  placeholder="Paste Patient record UUID"
-                  helperText="Spring Boot matches this UUID to the patients table (created by Admin or database seed)."
-                />
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Patient Entity UUID</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={patientId}
+                    onChange={(e) => setPatientId(e.target.value)}
+                    placeholder="Paste Patient record UUID"
+                    className="flex-1 p-2.5 rounded-lg border border-slate-300 text-sm outline-none focus:border-indigo-500 bg-white font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => {
+                      if (patientId.trim()) {
+                        localStorage.setItem('doctor_sys_patient_id', patientId.trim());
+                        setShowPatientIdConfig(false);
+                      }
+                    }}
+                  >
+                    Save
+                  </Button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">This UUID is from the patients table (created by Admin).</p>
               </div>
             )}
           </div>
@@ -318,6 +388,7 @@ export function BookAppointmentPage() {
             size="lg"
             isLoading={isSubmitting}
             className="w-full"
+            disabled={!patientId}
           >
             Confirm & Schedule Appointment
           </Button>

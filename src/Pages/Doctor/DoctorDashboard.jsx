@@ -20,20 +20,24 @@ export function DoctorDashboard() {
     async function loadDoctorInfo() {
       try {
         const doctors = await doctorApi.getDoctors();
-        const matched = doctors.find((d) => d.email.toLowerCase() === user?.email.toLowerCase());
+        const matched = Array.isArray(doctors)
+          ? doctors.find((d) => d.email.toLowerCase() === user?.email.toLowerCase())
+          : null;
         if (matched) {
           setDoctorProfile(matched);
           setDoctorId(matched.id);
           localStorage.setItem('doctor_sys_doctor_id', matched.id);
-        } else if (!doctorId && user?.id) {
+        } else if (user?.id) {
           setDoctorId(user.id);
         }
       } catch (err) {
-        if (!doctorId && user?.id) setDoctorId(user.id);
+        if (user?.id) setDoctorId(user.id);
       }
     }
-    loadDoctorInfo();
-  }, [user, doctorId]);
+    if (user?.email) {
+      loadDoctorInfo();
+    }
+  }, [user]);
 
   // Load Doctor Appointments
   useEffect(() => {

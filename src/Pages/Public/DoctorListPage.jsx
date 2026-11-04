@@ -13,12 +13,20 @@ export function DoctorListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const [specializations, setSpecializations] = useState([]);
+
   const fetchDoctors = async (spec) => {
     setLoading(true);
     setError('');
     try {
       const data = await doctorApi.getDoctors(spec);
-      setDoctors(data);
+      const list = Array.isArray(data) ? data : [];
+      setDoctors(list);
+      // Build unique specializations from full (unfiltered) doctor list
+      if (!spec) {
+        const uniqueSpecs = [...new Set(list.map((d) => d.specialization).filter(Boolean))].sort();
+        setSpecializations(uniqueSpecs);
+      }
     } catch (err) {
       setError(err.message || 'Failed to load doctors.');
     } finally {
@@ -71,13 +79,9 @@ export function DoctorListPage() {
             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-indigo-500 focus:ring-indigo-500 outline-none bg-white"
           >
             <option value="">All Specializations</option>
-            <option value="Cardiology">Cardiology</option>
-            <option value="Dermatology">Dermatology</option>
-            <option value="General Medicine">General Medicine</option>
-            <option value="Pediatrics">Pediatrics</option>
-            <option value="Orthopedics">Orthopedics</option>
-            <option value="Neurology">Neurology</option>
-            <option value="Gynecology">Gynecology</option>
+            {specializations.map((spec) => (
+              <option key={spec} value={spec}>{spec}</option>
+            ))}
           </select>
         </div>
       </div>

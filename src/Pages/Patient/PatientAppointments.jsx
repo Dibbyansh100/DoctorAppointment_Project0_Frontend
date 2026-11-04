@@ -50,9 +50,7 @@ export function PatientAppointments() {
       setActionMessage('Appointment successfully cancelled.');
       fetchAppointments();
     } catch (err) {
-      setErrorMessage(
-        err.message || 'Unable to cancel appointment. Note: Backend security policy restricts cancellation to Doctor/Admin.'
-      );
+      setErrorMessage(err.message || 'Unable to cancel appointment. Please try again.');
     }
   };
 

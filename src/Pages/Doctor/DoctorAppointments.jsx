@@ -22,22 +22,23 @@ export function DoctorAppointments() {
     async function resolveDoctor() {
       try {
         const doctors = await doctorApi.getDoctors();
-        const matched = doctors.find((d) => d.email.toLowerCase() === user?.email.toLowerCase());
+        const matched = Array.isArray(doctors)
+          ? doctors.find((d) => d.email.toLowerCase() === user?.email.toLowerCase())
+          : null;
         if (matched) {
           setDoctorId(matched.id);
           localStorage.setItem('doctor_sys_doctor_id', matched.id);
-        } else if (!doctorId && user?.id) {
+        } else if (user?.id) {
           setDoctorId(user.id);
         }
       } catch (err) {
-        // Fallback to user.id if public doctor query fails
-        if (!doctorId && user?.id) setDoctorId(user.id);
+        if (user?.id) setDoctorId(user.id);
       }
     }
-    if (!doctorId) {
+    if (user?.email) {
       resolveDoctor();
     }
-  }, [user, doctorId]);
+  }, [user]);
 
   const fetchAppointments = async () => {
     if (!doctorId) {
