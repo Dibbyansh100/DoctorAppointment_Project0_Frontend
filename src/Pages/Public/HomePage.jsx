@@ -2,7 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../Components/Common';
-import { Calendar, Stethoscope, Shield, Clock, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Calendar, Stethoscope, Shield, ArrowRight } from 'lucide-react';
+import clinicHero from '../../assets/clinic-hero.jpg';
 
 export function HomePage() {
   const { isAuthenticated, userRole } = useAuth();
@@ -20,34 +21,63 @@ export function HomePage() {
 
   return (
     <div className="bg-slate-50">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-indigo-50/70 via-white to-slate-50 pt-16 pb-24 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-5xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-semibold mb-6">
-            <span className="flex h-2 w-2 rounded-full bg-indigo-600 animate-pulse" />
-            Healthcare Scheduling Made Effortless
-          </div>
+      {/* Hero Section with Medical Clinic Background */}
+      <section className="relative overflow-hidden py-16 sm:py-24 lg:py-28 px-4 sm:px-6 lg:px-8 border-b border-slate-200/70">
+        {/* Background Image Layer */}
+        <div
+          className="absolute inset-0 bg-cover bg-center sm:bg-right-top bg-no-repeat"
+          style={{ backgroundImage: `url(${clinicHero})` }}
+        />
 
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
-            Schedule Clinic Appointments with <span className="text-indigo-600">Top Specialists</span>
-          </h1>
+        {/* Refined Gradient Overlay: Provides crisp readability on left while highlighting clinic on right */}
+        <div className="absolute inset-0 bg-gradient-to-r from-white via-white/95 to-white/30 sm:via-white/90 sm:to-transparent" />
 
-          <p className="mt-4 text-base sm:text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            A seamless medical appointment management system designed for patients, doctors, and clinic administrators. Real-time availability, conflict-free scheduling, and verified doctor directories.
-          </p>
+        {/* Hero Content */}
+        <div className="relative max-w-7xl mx-auto">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-semibold mb-6 shadow-xs">
+              <span className="flex h-2 w-2 rounded-full bg-indigo-600 animate-pulse" />
+              Healthcare Scheduling Made Effortless
+            </div>
 
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link to={action.to}>
-              <Button size="lg" variant="primary" icon={ArrowRight}>
-                {action.label}
-              </Button>
-            </Link>
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 tracking-tight leading-tight">
+              Schedule Clinic Appointments with{' '}
+              <span className="text-indigo-600">Top Specialists</span>
+            </h1>
 
-            <Link to="/doctors">
-              <Button size="lg" variant="outline" icon={Stethoscope}>
-                Browse Doctors
-              </Button>
-            </Link>
+            <p className="mt-5 text-sm sm:text-base lg:text-lg text-slate-600 leading-relaxed font-medium">
+              A seamless medical appointment management system designed for patients, doctors, and clinic administrators. Real-time availability, conflict-free scheduling, and verified doctor directories.
+            </p>
+
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link to={action.to}>
+                <Button size="lg" variant="primary" icon={ArrowRight} className="shadow-md shadow-indigo-500/20">
+                  {action.label}
+                </Button>
+              </Link>
+
+              <Link to="/doctors">
+                <Button size="lg" variant="outline" icon={Stethoscope} className="bg-white/80 backdrop-blur-xs">
+                  Browse Doctors
+                </Button>
+              </Link>
+            </div>
+
+            {/* Quick Metrics Strip */}
+            <div className="mt-10 pt-6 border-t border-slate-200/80 grid grid-cols-3 gap-4 text-left">
+              <div>
+                <p className="text-xl sm:text-2xl font-black text-slate-900">100%</p>
+                <p className="text-[11px] text-slate-500 font-medium">Verified Physicians</p>
+              </div>
+              <div>
+                <p className="text-xl sm:text-2xl font-black text-indigo-600">24/7</p>
+                <p className="text-[11px] text-slate-500 font-medium">Slot Availability</p>
+              </div>
+              <div>
+                <p className="text-xl sm:text-2xl font-black text-slate-900">Zero</p>
+                <p className="text-[11px] text-slate-500 font-medium">Booking Conflicts</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
